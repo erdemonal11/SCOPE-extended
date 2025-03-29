@@ -1,0 +1,7 @@
+metadata for ED
+query: "equilibrium dialysis" AND ("protein-ligand binding" OR "binding constant" OR "affinity measurement")
+search date: 2025-03-29
+number of papers: 507
+number of chemicals: 34289
+number of unique chemicals: 2966 (note: not all chemicals can be plotted due to missing logP values)
+publication years range: 1963 - 2025

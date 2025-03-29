@@ -1,0 +1,6 @@
+metadata for DSF
+query: METHODS:"Differential scanning fluorimetry"
+search date: 2025-03-16
+number of papers: 2562
+number of chemicals: 267562
+number of unique chemicals: 5777 (note: not all chemicals can be plotted due to missing logP values)

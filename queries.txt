@@ -1,0 +1,5 @@
+CE, "capillary electrophoresis" AND ("protein-ligand binding" OR "binding constant" OR "affinity measurement")
+ITC, "isothermal titration calorimetry" AND ("protein-ligand binding" OR "binding constant" OR "affinity measurement")
+SPR, "surface plasmon resonance" AND ("protein-ligand binding" OR "binding constant" OR "Kd" OR "affinity measurement")
+UV, "UV-Vis spectroscopy" AND ("protein-ligand binding" OR "binding constant" OR "affinity measurement")
+ED, "equilibrium dialysis" AND ("protein-ligand binding" OR "binding constant" OR "affinity measurement") 
