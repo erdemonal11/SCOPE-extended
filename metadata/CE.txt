@@ -1,7 +1,0 @@
-metadata for CE
-query: "capillary electrophoresis" AND ("protein-ligand binding" OR "binding constant" OR "affinity measurement")
-search date: 2025-03-29
-number of papers: 530
-number of chemicals: 59135
-number of unique chemicals: 4069 (note: not all chemicals can be plotted due to missing logP values)
-publication years range: 1993 - 2025

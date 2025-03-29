@@ -1,7 +1,0 @@
-metadata for SPR
-query: "surface plasmon resonance" AND ("protein-ligand binding" OR "binding constant" OR "Kd" OR "affinity measurement")
-search date: 2025-03-29
-number of papers: 21929
-number of chemicals: 1659156
-number of unique chemicals: 11240 (note: not all chemicals can be plotted due to missing logP values)
-publication years range: 1991 - 2025

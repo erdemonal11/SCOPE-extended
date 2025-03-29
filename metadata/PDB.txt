@@ -1,6 +1,0 @@
-metadata for PDB
-query: "fluorescence quenching" AND ("protein-ligand interaction" OR "binding mechanism" OR "Stern-Volmer" OR "binding constant")
-search date: 2025-03-18
-number of papers: 6424
-number of chemicals: 714923
-number of unique chemicals: 8902 (note: not all chemicals can be plotted due to missing logP values)

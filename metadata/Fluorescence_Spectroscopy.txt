@@ -1,6 +1,0 @@
-metadata for Fluorescence_Spectroscopy
-query: METHODS:"Fluorescence spectroscopy"
-search date: 2025-03-16
-number of papers: 9491
-number of chemicals: 999714
-number of unique chemicals: 9243 (note: not all chemicals can be plotted due to missing logP values)
