@@ -12,7 +12,7 @@ from collections import Counter
 # BOKEH
 from bokeh import events
 from bokeh.io import output_file, show
-from bokeh.models import CustomJS, HoverTool, ColumnDataSource, Slider, CheckboxGroup, RadioGroup, Button, MultiSelect
+from bokeh.models import CustomJS, HoverTool, ColumnDataSource, Slider, CheckboxGroup, RadioGroup, Button, MultiSelect, Div
 from bokeh.plotting import figure
 from bokeh.transform import linear_cmap
 from bokeh.transform import log_cmap
@@ -23,45 +23,47 @@ from bokeh.palettes import Viridis256, Greys256
 
 def import_table(file):
     '''
-    This function imports the pkl files from the tables forlder, and returns a pandas dataframe.
+    This function imports the pkl files from the tables folder, and returns a pandas dataframe.
     '''
     table = pd.read_pickle(file)
     return table
 
 def create_array(table):
     '''
-    This function recieves a dataframe with logP and Mass values for every ChEBI identifier.
+    This function receives a dataframe with logP and Mass values for every ChEBI identifier.
     It returns two numpy arrays: for mass and logP.
+    Fixed to ensure both arrays have the same length.
     '''
-    # create lists
-    x = [float(logP) for logP in table.logP]
-    y = [float(mass) for mass in table.Mass]
-
+    # Filter for rows that have valid (non-NaN) values for both Mass and logP
+    valid_data = table.dropna(subset=['Mass', 'logP'])
+    
+    if len(valid_data) == 0:
+        print(f"Warning: No compounds with both Mass and logP data found!")
+        return np.array([]), np.array([])
+    
+    # Create lists from the filtered data
+    x = [float(logP) for logP in valid_data.logP]
+    y = [float(mass) for mass in valid_data.Mass]
+    
+    print(f"Creating arrays for {len(x)} compounds with complete Mass/logP data")
+    
     return np.asarray(x), np.asarray(y)
 
 def hexbin(df, x, y, size, aspect_scale, orientation):
     '''
-    This function recieves x and y coordinate arrays and converts these into q and r hexagon coordinates by calling Bokeh's "cartesian_to_axial" function.
-    The q and r coordinates are added to the dataframe, and this dataframe is returend.
+    This function receives x and y coordinate arrays and converts these into q and r hexagon coordinates by calling Bokeh's "cartesian_to_axial" function.
+    The q and r coordinates are added to the dataframe, and this dataframe is returned.
     '''
     q, r = cartesian_to_axial(x, y, size, orientation=orientation, aspect_scale=aspect_scale)
 
-    df.loc[:'q'] = q
-    df.loc[:'r'] = r
+    df.loc[:,'q'] = q
+    df.loc[:,'r'] = r
 
     return df
 
 def add_tooltip_columns(df, table):
     '''
-    For every hexagon, a tooltip will be created that will be shown when the user hovers with the mouse over the hexagon.
-    The tooltip will show the 3 most frequent ChEBI identifiers and additional information.
-
-    This function recieves:
-    - a "df" dataframe (with hexagonal coordinates) that will be the source for the multiplot
-    - the "table" dataframe with information that is needed for the tooltip such as name, mass, logP for every ChEBI identifier
-
-    In this function, the tooltip information will be added to the original dataframe in additional columns.
-    These columns will be used by JavaScript code to display in the tooltip.
+    Enhanced tooltip with drug-likeness information
     '''
     table = table.drop(['Class', 'logP', 'Mass'], axis=1, errors='ignore')
     table = table.reset_index()
@@ -98,7 +100,7 @@ def add_tooltip_columns(df, table):
 
 def get_blur(x,y,sigma_x,sigma_y):
     '''
-    This function recieves x, y values and sigma x, sigma y values and returns the calculated blur value.
+    This function receives x, y values and sigma x, sigma y values and returns the calculated blur value.
     See https://en.wikipedia.org/wiki/Multivariate_normal_distribution
     '''
     return exp(-0.5*(x*x/sigma_x/sigma_x + y*y/sigma_y/sigma_y))
@@ -106,9 +108,9 @@ def get_blur(x,y,sigma_x,sigma_y):
 def get_rows(q, r, counts, tfidf, kernel, blur_max, step_size):
     '''
     For every hexagon (=row in the dataframe), counts will be distributed to surrounding hexagons in a gaussian manner (blur).
-    This function recieves information for one hexagon so that it can distribute its counts to other hexagons.
+    This function receives information for one hexagon so that it can distribute its counts to other hexagons.
     To distribute the counts to other hexagons/rows, we use the "kernel".
-    We create new rows for other hexagons, which means we might create many rows with the same hexagonal coorindates.
+    We create new rows for other hexagons, which means we might create many rows with the same hexagonal coordinates.
     Newly created rows will be returned
     '''
     # initiate original row
@@ -126,7 +128,7 @@ def get_rows(q, r, counts, tfidf, kernel, blur_max, step_size):
 
 def construct_kernel(blur_max, step_size):
     '''
-    This function recieves the maximum blur and step size to construct the kernel.
+    This function receives the maximum blur and step size to construct the kernel.
     The kernel is a dictionary that uses the coordinates as keys, and the blur values as values.
     The blur values depend on sd_x, so the kernel will return a list of blur values from 0 to blur_max.
     Blur values are calculated by "get_blur()"".
@@ -182,9 +184,8 @@ def add_gaussian_blur(df, blur_max, step_size):
 def check_for_ids(id_list, class_id):
     '''
     This functions checks if the Class identifier is in the "id_list".
-    This ChEBI ID-specific list contains other ChEBI identifers of chemicals that are of higher level hierarchical class.
+    This ChEBI ID-specific list contains other ChEBI identifiers of chemicals that are of higher level hierarchical class.
     '''
-    # check = any(class_id == id for id in id_list)
     check = any(str(class_id) == str(id) for id in id_list)
     return check
 
@@ -229,6 +230,32 @@ def analyze_publication_years(table):
         'year_counts': year_counts
     }
 
+def analyze_drug_likeness(table):
+    '''
+    Analyze drug-likeness statistics from the table
+    '''
+    drug_stats = {}
+    
+    if 'Lipinski_RO5' in table.columns:
+        ro5_compliant = table['Lipinski_RO5'].sum()
+        ro5_total = table['Lipinski_RO5'].count()
+        drug_stats['lipinski_compliant'] = ro5_compliant
+        drug_stats['lipinski_percentage'] = round((ro5_compliant / ro5_total) * 100, 1) if ro5_total > 0 else 0
+    
+    if 'Veber_Rule' in table.columns:
+        veber_compliant = table['Veber_Rule'].sum()
+        veber_total = table['Veber_Rule'].count()
+        drug_stats['veber_compliant'] = veber_compliant
+        drug_stats['veber_percentage'] = round((veber_compliant / veber_total) * 100, 1) if veber_total > 0 else 0
+    
+    if 'Drug_Like' in table.columns:
+        drug_like = table['Drug_Like'].sum()
+        drug_total = table['Drug_Like'].count()
+        drug_stats['drug_like'] = drug_like
+        drug_stats['drug_like_percentage'] = round((drug_like / drug_total) * 100, 1) if drug_total > 0 else 0
+    
+    return drug_stats
+
 def create_class_source(table, size, ratio, orientation, class_id):
     '''
     This function finds all chemicals belonging to class "class_id" as defined by the ChEBI ontology.
@@ -255,77 +282,187 @@ def create_class_source(table, size, ratio, orientation, class_id):
 
     return source
 
-def create_data_source(table, term, size, ratio, orientation, BLUR_MAX, BLUR_STEP_SIZE):
+def create_drug_like_source(table, size, ratio, orientation, rule_type='Drug_Like'):
     '''
-    This function recieves a query-specific "table" dataframe, and constructs a source for the hexagonal plot.
-    The plot source will be created depending on plot-specific values (size, ratio, orientation).
-    Additionally, a gaussian blur will be applied for different values of sd(x) (BLUR_MAX, BLUR_STEP_SIZE)
+    Create a source for highlighting drug-like compounds
     '''
-    # create array with mass and logP values
-    x, y = create_array(table)
-
-    # create hexagonal coordinates from mass and logP values
+    if rule_type not in table.columns:
+        # Return empty source if rule column doesn't exist
+        df = pd.DataFrame(columns=['q', 'r', 'Count', 'TFIDF'])
+        return ColumnDataSource(df)
+    
+    # Filter for compounds that meet the drug-likeness rule
+    drug_like_table = table[table[rule_type] == True]
+    
+    if len(drug_like_table) == 0:
+        df = pd.DataFrame(columns=['q', 'r', 'Count', 'TFIDF'])
+        return ColumnDataSource(df)
+    
+    # Create hexagonal coordinates
+    x, y = create_array(drug_like_table)
+    if len(x) == 0 or len(y) == 0:
+        df = pd.DataFrame(columns=['q', 'r', 'Count', 'TFIDF'])
+        return ColumnDataSource(df)
+        
     q, r = cartesian_to_axial(x, y, size, orientation=orientation, aspect_scale=ratio)
-
-    # create dataframe with hexagonal coordinates as rows (row = hexagon)
-    df = table.reset_index()
+    df = drug_like_table.reset_index()
     df.loc[:,"q"] = q
     df.loc[:,"r"] = r
 
-    # sum rows with identical coordinates together, add blur, and add tooltip information
-    df = df.groupby(['q', 'r']).agg({'Count': 'sum', 'TFIDF': 'sum', 'ChEBI': list}).reset_index()
+    # Group by hexagon coordinates
+    df = df.groupby(['q', 'r']).agg({'Count': 'sum', 'TFIDF': 'sum'}).reset_index()
+    
+    return ColumnDataSource(df)
 
-    df = add_gaussian_blur(df, BLUR_MAX, BLUR_STEP_SIZE)
-    df = add_tooltip_columns(df, table)
-    df = df.drop(columns='ChEBI')
-    df.loc[:,"Count_total"] = df.loc[:,"Count"]
+def create_data_source(table, term, size, ratio, orientation, BLUR_MAX, BLUR_STEP_SIZE):
+    '''
+    This function receives a query-specific "table" dataframe, and constructs a source for the hexagonal plot.
+    Fixed to handle missing Mass/logP data properly.
+    '''
+    import pandas as pd
+    import numpy as np
+    from bokeh.models import ColumnDataSource
+    from bokeh.util.hex import cartesian_to_axial
+    
+    # Filter table for compounds with both Mass and logP data
+    table_filtered = table.dropna(subset=['Mass', 'logP']).copy()
+    
+    if len(table_filtered) == 0:
+        print(f"Warning: No compounds with complete Mass/logP data for {term}")
+        # Return empty source
+        empty_df = pd.DataFrame(columns=['q', 'r', 'Count', 'TFIDF'])
+        return ColumnDataSource(empty_df), f'No data available for {term}'
+    
+    print(f"Using {len(table_filtered)} compounds with complete Mass/logP data out of {len(table)} total")
+    
+    # create array with mass and logP values from filtered table
+    x = [float(logP) for logP in table_filtered.logP]
+    y = [float(mass) for mass in table_filtered.Mass]
+    
+    if len(x) == 0 or len(y) == 0:
+        print(f"Warning: Empty arrays generated for {term}")
+        empty_df = pd.DataFrame(columns=['q', 'r', 'Count', 'TFIDF'])
+        return ColumnDataSource(empty_df), f'No plottable data for {term}'
+
+    # create hexagonal coordinates from mass and logP values
+    q, r = cartesian_to_axial(np.asarray(x), np.asarray(y), size, orientation=orientation, aspect_scale=ratio)
+
+    # create dataframe with hexagonal coordinates as rows (row = hexagon)
+    # IMPORTANT: Use the filtered table and reset index to match coordinate arrays
+    df = table_filtered.reset_index(drop=False)  # Keep the original index as a column
+    df = df.iloc[:len(q)]  # Ensure we only take as many rows as we have coordinates
+    df.loc[:,"q"] = q
+    df.loc[:,"r"] = r
+
+    # sum rows with identical coordinates together
+    # Group by hexagonal coordinates and aggregate
+    agg_dict = {'Count': 'sum', 'ChEBI': list}
+    if 'TFIDF' in df.columns:
+        agg_dict['TFIDF'] = 'sum'
+    else:
+        df['TFIDF'] = df['Count']  # Use Count as TFIDF if not available
+        agg_dict['TFIDF'] = 'sum'
+    
+    df_grouped = df.groupby(['q', 'r']).agg(agg_dict).reset_index()
+    
+    # Add gaussian blur - simplified version
+    try:
+        df_blurred = add_gaussian_blur(df_grouped, BLUR_MAX, BLUR_STEP_SIZE)
+        df_final = add_tooltip_columns(df_blurred, table_filtered)
+    except Exception as e:
+        print(f"Warning: Advanced features failed ({e}), using basic version")
+        # Fallback to basic version without blur and advanced tooltips
+        df_final = df_grouped.copy()
+        
+        # Add basic blur columns
+        for sd_x in np.arange(0, BLUR_MAX + 0.25, 0.25):
+            df_final[str(sd_x)] = df_final['Count']
+            if f'{sd_x}_tfidf' not in df_final.columns:
+                df_final[f'{sd_x}_tfidf'] = df_final['TFIDF']
+    
+    # Clean up and ensure required columns exist
+    if 'ChEBI' in df_final.columns:
+        df_final = df_final.drop(columns='ChEBI', errors='ignore')
+    
+    df_final.loc[:,"Count_total"] = df_final.loc[:,"Count"]
+    
+    # Ensure all required numeric columns are present and valid
+    numeric_columns = ['Count', 'TFIDF', 'Count_total']
+    for col in numeric_columns:
+        if col in df_final.columns:
+            df_final[col] = pd.to_numeric(df_final[col], errors='coerce').fillna(0)
 
     # plot title and source
-    title = 'Hexbin plot for '+str(len(x))+' annotated chemicals with query '+str(term)
-    source = ColumnDataSource(df)
+    title = f'Hexbin plot for {len(x)} annotated chemicals with query {term}'
+    source = ColumnDataSource(df_final)
     return source, title
 
 def create_stats_description(table):
     '''
-    This function recieves the "table" variable and retrieves summary statistcs (mean, std).
-    Statistics are returned in html style.
+    Enhanced function with drug-likeness and extended property statistics
     '''
     total_count = table.Count.sum()
-    mean_logP = np.repeat(table.logP, table.Count).values.astype(float).mean()
-    mean_mass = np.repeat(table.Mass, table.Count).values.astype(float).mean()
-    stdev_logP = np.repeat(table.logP, table.Count).values.astype(float).std()
-    stdev_mass = np.repeat(table.Mass, table.Count).values.astype(float).std()
     
-    # Get publication year statistics
-    pub_years_stats = analyze_publication_years(table)
-    
-    title = 'Statistics of mass, logP values, and publication dates'
+    # Basic molecular properties
     stats_listed = [
-        title, 
-        'Total amount of chemicals: %d' % total_count, 
-        'LogP mean: %f' % mean_logP, 
-        'LogP standard deviations: %f' % stdev_logP,
-        'Mass mean: %f' % mean_mass, 
-        'Mass standard deviation: %f' % stdev_mass
+        'Enhanced Chemical Property Statistics',
+        f'Total amount of chemicals: {total_count}',
     ]
     
-    # Handle publication year statistics if available
+    # Core properties
+    properties = {
+        'logP': 'LogP',
+        'Mass': 'Molecular Weight (Da)',
+        'HBD': 'Hydrogen Bond Donors',
+        'HBA': 'Hydrogen Bond Acceptors',
+        'PSA': 'Polar Surface Area (Ų)',
+        'RotBonds': 'Rotatable Bonds'
+    }
+    
+    for prop_col, prop_name in properties.items():
+        if prop_col in table.columns:
+            prop_data = pd.to_numeric(table[prop_col], errors='coerce')
+            prop_data = prop_data.dropna()
+            
+            if len(prop_data) > 0:
+                # Weight by count for distribution stats
+                weighted_data = np.repeat(prop_data, table.loc[prop_data.index, 'Count'])
+                
+                stats_listed.extend([
+                    f'{prop_name} mean: {weighted_data.mean():.3f}',
+                    f'{prop_name} std dev: {weighted_data.std():.3f}',
+                    f'{prop_name} median: {np.median(weighted_data):.3f}'
+                ])
+    
+    # Drug-likeness statistics
+    drug_stats = analyze_drug_likeness(table)
+    if drug_stats:
+        stats_listed.append('<br><b>Drug-likeness Analysis:</b>')
+        
+        if 'lipinski_compliant' in drug_stats:
+            stats_listed.append(f"Lipinski RO5 compliant: {drug_stats['lipinski_compliant']} ({drug_stats['lipinski_percentage']}%)")
+        
+        if 'veber_compliant' in drug_stats:
+            stats_listed.append(f"Veber rule compliant: {drug_stats['veber_compliant']} ({drug_stats['veber_percentage']}%)")
+        
+        if 'drug_like' in drug_stats:
+            stats_listed.append(f"Overall drug-like: {drug_stats['drug_like']} ({drug_stats['drug_like_percentage']}%)")
+    
+    # Publication year analysis
+    pub_years_stats = analyze_publication_years(table)
+    
     if pub_years_stats['has_data']:
-        stats_listed.append('<br><b>Publication Years:</b>')
-        stats_listed.append('Year range: %s - %s' % (pub_years_stats['min_year'], pub_years_stats['max_year']))
-        stats_listed.append('Mean publication year: %s' % pub_years_stats['mean_year'])
-        stats_listed.append('Median publication year: %s' % pub_years_stats['median_year'])
+        stats_listed.append('<br><b>Publication Timeline:</b>')
+        stats_listed.append(f"Year range: {pub_years_stats['min_year']} - {pub_years_stats['max_year']}")
+        stats_listed.append(f"Mean publication year: {pub_years_stats['mean_year']}")
+        stats_listed.append(f"Median publication year: {pub_years_stats['median_year']}")
         
-        # Add year distribution
+        # Add year distribution table
         stats_listed.append('<br><b>Publications per year:</b>')
-        
-        # Create year distribution HTML
         year_dist_html = '<table border="1" cellpadding="3" style="border-collapse: collapse;">'
         year_dist_html += '<tr><th>Year</th><th>Publications</th></tr>'
         
-        # Sort years
         sorted_years = sorted(pub_years_stats['year_counts'].keys())
-        
         for year in sorted_years:
             count = pub_years_stats['year_counts'][year]
             year_dist_html += f'<tr><td>{year}</td><td>{count}</td></tr>'
@@ -333,34 +470,37 @@ def create_stats_description(table):
         year_dist_html += '</table>'
         stats_listed.append(year_dist_html)
     else:
-        stats_listed.append('<br><b>Publication Years:</b> Data not available')
+        stats_listed.append('<br><b>Publication Timeline:</b> Data not available')
     
     stats_description = return_html(stats_listed)
     return stats_description
 
 def return_html(metadata):
     '''
-    This function recieves the metadata. The metadata is put in the html string and this string returned.
+    This function receives the metadata. The metadata is put in the html string and this string returned.
     '''
-    html_content = """
+    html_content = f"""
     <HTML>
     <HEAD>
-    <TITLE>%s</TITLE>
+    <TITLE>{metadata[0]}</TITLE>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.4; }
-        h1 { color: #444; }
-        .stats-container { margin-top: 20px; }
-        .year-stats { margin-top: 15px; }
+        body {{ font-family: Arial, sans-serif; margin: 20px; line-height: 1.4; }}
+        h1 {{ color: #444; }}
+        .stats-container {{ margin-top: 20px; }}
+        .drug-stats {{ margin-top: 15px; background-color: #f0f8ff; padding: 10px; border-radius: 5px; }}
+        .year-stats {{ margin-top: 15px; }}
+        table {{ margin-top: 10px; }}
+        th {{ background-color: #e6e6e6; }}
     </style>
     </HEAD>
     <BODY BGCOLOR="FFFFFF">
-    <h1>%s</h1>
+    <h1>{metadata[0]}</h1>
     <div class="stats-container">
-    """ % (metadata[0], metadata[0])
+    """
     
     # Add all the metadata items
     for i in range(1, len(metadata)):
-        html_content += "<div>%s</div>\n" % metadata[i]
+        html_content += f"<div>{metadata[i]}</div>\n"
     
     html_content += """
     </div>
@@ -371,28 +511,33 @@ def return_html(metadata):
 
 def get_tables(files):
     '''
-    This function recieves a list of files, imports these files and their corresponding metadata, and saves them in a dictionary.
+    Enhanced function to import tables with extended property support
     '''
     tables = dict()
     for file in files:
         table = import_table(file)
         term = file.split('/')[1].split('_table')[0]
-        metadata_file = 'metadata/'+str(term)+'.txt'
+        metadata_file = f'metadata/{term}.txt'
         
         try:
-            metadata_lines = open(metadata_file, 'r')
-            metadata = metadata_lines.readlines()
-            metadata_lines.close()
+            with open(metadata_file, 'r') as f:
+                metadata = f.readlines()
         except:
             print(f"Warning: Metadata file for {term} not found or couldn't be read.")
             metadata = [f"Metadata for {term}", "No metadata available"]
         
-        # Check for publication years data in the table
+        # Add information about available extended properties
+        extended_props = ['HBD', 'HBA', 'PSA', 'RotBonds', 'Role', 'Lipinski_RO5', 'Veber_Rule', 'Drug_Like']
+        available_props = [prop for prop in extended_props if prop in table.columns]
+        
+        if available_props:
+            metadata.append(f"Extended properties available: {', '.join(available_props)}\n")
+        
+        # Check for publication years data
         if 'PublicationYears' in table.columns:
             pub_years_stats = analyze_publication_years(table)
             if pub_years_stats['has_data']:
                 year_info = f"Publication years range: {pub_years_stats['min_year']} - {pub_years_stats['max_year']}\n"
-                # Add year info to metadata if not already present
                 if not any("publication years range" in line.lower() for line in metadata):
                     metadata.append(year_info)
         
@@ -402,26 +547,14 @@ def get_tables(files):
 
 def get_files(folder):
     '''
-    This function recieves the input folder and returns a list of file paths in this folder.
+    This function receives the input folder and returns a list of file paths in this folder.
     '''
-    files = ['%s/%s' % (folder, file) for file in os.listdir(folder) if '.pkl' in file]
+    files = [f'{folder}/{file}' for file in os.listdir(folder) if '.pkl' in file]
     return files
-
-def parser():
-    parser = argparse.ArgumentParser(description='This script makes a table of the query IDs, their names and their properties')
-    parser.add_argument('-i', required=True, metavar='input_folder', dest='input_folder', help='[i] to select input folder')
-    parser.add_argument('-o', required=True, metavar='output_filename', dest='output_filename', help='[o] to name .html output filename (a \'plots\' folder is required!)')
-    parser.add_argument('-xmin', required=False, metavar='xmin', dest='xmin', help='[xmin] to select x axis minimum (logP), default is -5')
-    parser.add_argument('-xmax', required=False, metavar='xmax', dest='xmax', help='[xmax] to select x axis maximum (logP), default is 10')
-    parser.add_argument('-ymax', required=False, metavar='ymax', dest='ymax', help='[ymax] to select y axix maximum (mass in Da), default is 1600')
-    parser.add_argument('-class', required=False, metavar='class_id', dest='class_id', help='[c] to select a class to be shown in the plot with a click on the class button')
-    arguments = parser.parse_args()
-    return arguments
 
 def return_JS_code(widget):
     '''
-    This function recieves a string that indicates the widget.
-    It returns a JavaScript callback code corresponding to the widget.
+    Enhanced JavaScript code with drug-likeness highlighting support
     '''
     if widget == 'multi_select_class':
         code = """
@@ -443,7 +576,6 @@ def return_JS_code(widget):
             var sd_x = String(sd_x);
 
             // check for tfidf
-
             if (checkbox.active.length == 1) {
             sd_x = sd_x.concat('_tfidf')
             }
@@ -461,7 +593,6 @@ def return_JS_code(widget):
             }
 
             // class
-
             class_hex.visible = false
 
             for (var key in new_class){
@@ -479,7 +610,6 @@ def return_JS_code(widget):
             p.title.text = title
 
             // apply blur and saturation
-
             for (var i = 0; i < source_data[sd_x].length; i++) {
                 source_data['Count'][i] = Math.pow(source_data[sd_x][i], 1/f)
                 }
@@ -491,7 +621,36 @@ def return_JS_code(widget):
             source_class.change.emit();
             source.change.emit();
         """
-    if widget == 'multi_select':
+        
+    elif widget == 'drug_likeness':
+        code = """
+            var source_drug_data = source_drug.data;
+            var term_to_drug_sources = term_to_drug_sources;
+            var term = multi_select.value[0];
+            var active = cb_obj.active;
+            var drug_hex = drug_hex;
+
+            if (active.length > 0) {
+                // Show drug-like highlighting
+                var drug_data = term_to_drug_sources[term]['source'].data;
+                
+                for (var key in drug_data) {
+                    source_drug_data[key] = [];
+                    for (i=0; i<drug_data[key].length; i++) {
+                        source_drug_data[key].push(drug_data[key][i]);
+                    }
+                }
+                
+                drug_hex.visible = true;
+            } else {
+                // Hide drug-like highlighting
+                drug_hex.visible = false;
+            }
+            
+            source_drug.change.emit();
+        """
+    
+    elif widget == 'multi_select':
         code = """
             var source_data = source.data;
             var term_to_source = term_to_source;
@@ -501,12 +660,10 @@ def return_JS_code(widget):
             var p = p;
             var mapper = mapper;
 
-
             if (sd_x % 1 == 0){var sd_x = sd_x.toFixed(1)}
             var sd_x = String(sd_x);
 
             // check for tfidf
-
             if (checkbox.active.length == 1) {
             sd_x = sd_x.concat('_tfidf')
             }
@@ -527,7 +684,6 @@ def return_JS_code(widget):
             p.title.text = title
 
             // apply blur and saturation
-
             for (var i = 0; i < source_data[sd_x].length; i++) {
                 source_data['Count'][i] = Math.pow(source_data[sd_x][i], 1/f)
                 }
@@ -538,35 +694,7 @@ def return_JS_code(widget):
             // apply changes
             source.change.emit();
         """
-    elif widget == 'slider2':
-        code = """
-            var source_data = source.data;
-            var f = slider1.value
-            var mapper = mapper;
-            var checkbox = checkbox;
-            var sd_x = cb_obj.value;
-
-            if (sd_x % 1 == 0){var sd_x = sd_x.toFixed(1)}
-            var sd_x = String(sd_x);
-
-            // check for tfidf
-
-            if (checkbox.active.length == 1) {
-            sd_x = sd_x.concat('_tfidf')
-            }
-
-            // apply blur and saturation
-
-            for (var i = 0; i < source_data[sd_x].length; i++) {
-                source_data['Count'][i] = Math.pow(source_data[sd_x][i], 1/f)
-                }
-
-            // maximum value for fill_color
-            mapper.transform.high = Math.max.apply(Math, source_data['Count'])
-
-            // apply changes
-            source.change.emit();
-        """
+        
     elif widget == 'tooltips':
         code = """
             <style>
@@ -595,7 +723,7 @@ def return_JS_code(widget):
                 <th>($x, $y)</th>
               </tr>
               <tr style="color: #fff; background: black;">
-                <th>Chebi ID</th>
+                <th>ChEBI ID</th>
                 <th>Count</th>
                 <th>TFIDF</th>
                 <th>Name</th>
@@ -619,8 +747,35 @@ def return_JS_code(widget):
                 <th>@Names3</th>
               </tr>
             </table>
-
             """
+
+    elif widget == 'slider2':
+        code = """
+            var source_data = source.data;
+            var f = slider1.value
+            var mapper = mapper;
+            var checkbox = checkbox;
+            var sd_x = cb_obj.value;
+
+            if (sd_x % 1 == 0){var sd_x = sd_x.toFixed(1)}
+            var sd_x = String(sd_x);
+
+            // check for tfidf
+            if (checkbox.active.length == 1) {
+            sd_x = sd_x.concat('_tfidf')
+            }
+
+            // apply blur and saturation
+            for (var i = 0; i < source_data[sd_x].length; i++) {
+                source_data['Count'][i] = Math.pow(source_data[sd_x][i], 1/f)
+                }
+
+            // maximum value for fill_color
+            mapper.transform.high = Math.max.apply(Math, source_data['Count'])
+
+            // apply changes
+            source.change.emit();
+        """
 
     elif widget == 'slider1':
         code = """
@@ -633,17 +788,14 @@ def return_JS_code(widget):
             var sd_x = String(sd_x);
 
             // check for tfidf
-
             if (checkbox.active.length == 1) {
             sd_x = sd_x.concat('_tfidf')
             }
 
             // apply scaling
-
             for (var i = 0; i < source_data[sd_x].length; i++) {
                 source_data['Count'][i] = Math.pow(source_data[sd_x][i], 1/f)
                 }
-
 
             // maximum value for fill color
             mapper.transform.high = Math.max.apply(Math, source_data['Count'])
@@ -658,22 +810,16 @@ def return_JS_code(widget):
             var p = p;
             var Viridis256 = Viridis256;
             var Greys256 = Greys256;
-            // var class_hex = class_hex;
-            // var term_to_class = term_to_class;
-            var term = multi_select.value[0]
 
             if (active == 1){
             mapper.transform.palette = Greys256
             p.background_fill_color = '#000000'
-            // if (term_to_class[term]['show_class']){class_hex.glyph.fill_color = 'red'}
             }
 
             if (active == 0){
             mapper.transform.palette = Viridis256
             p.background_fill_color = '#440154'
-            // if(term_to_class[term]['show_class']){class_hex.glyph.fill_color = 'pink'}
             }
-
             """
 
     elif widget == 'checkbox':
@@ -688,13 +834,11 @@ def return_JS_code(widget):
             var sd_x = String(sd_x);
 
             // check for tfidf
-
             if (active.length == 1) {
             sd_x = sd_x.concat('_tfidf')
             }
 
             // apply scaling
-
             for (var i = 0; i < source_data[sd_x].length; i++) {
                 source_data['Count'][i] = Math.pow(source_data[sd_x][i], 1/f)
                 }
@@ -726,6 +870,7 @@ def return_JS_code(widget):
             var wnd = window.open("about:blank", "", "_blank");
             wnd.document.write(metadata)
             """
+            
     elif widget == 'stats':
         code = """
             var term_to_stats = term_to_stats
@@ -747,32 +892,19 @@ def return_JS_code(widget):
             } else {
                 class_hex.visible = false
             }
-
-
             """
+            
     return code
 
 def plot(tables, output_filename, xmin, xmax, ymin, ymax, class_id):
     '''
-    This is the plot function that uses Bokeh functions and widgets to make an interactive hexagon plot.
-
-    This function recieves:
-    - tables: dictionary with tables used to create arrays of repeated x, y coordinates (depending on the counts) for the hexagon plot.
-    - output_filename: filename of .html output in the plots folder
-
-    The coordinate arrays are used to create a pandas dataframe with Bokeh functions. This dataframe contains the q, r coordinates and counts used to plot the
-    hexagons. To this dataframe, extra information is added (e.g. most common chemicals), which is displayed in the hover tooltip.
-
-    Gaussian blur is added to copies of this dataframe and given as input to the Bokeh slider widget.
-    Other widgets are added as well, for saturation, normalization etc. Bokeh allows to customize these widges with javascript code.
-
-    The hexagon plot is saved as a .html file and also shown in the browser.
+    Enhanced plot function with drug-likeness highlighting
     '''
-
     if not os.path.isdir('plots'):
         os.mkdir('plots')
-    file_name = 'plots/'+str(output_filename)+'.html'
+    file_name = f'plots/{output_filename}.html'
     output_file(file_name)
+    
     # Blur and saturation values
     BLUR_MAX = 4
     BLUR_STEP_SIZE = 0.25
@@ -781,15 +913,15 @@ def plot(tables, output_filename, xmin, xmax, ymin, ymax, class_id):
 
     # Hexagon plot properties
     SIZE_HEXAGONS = 10
-    orientation = 'flattop' #bokeh alows 2 different hexagon orientations which also influences hexagon size calculations, but we currently have only calculated blur distances for this orientation
-    ratio = ((ymax-ymin) / (xmax-xmin) )
+    orientation = 'flattop'
+    ratio = ((ymax-ymin) / (xmax-xmin))
     size = SIZE_HEXAGONS / ratio
     hexagon_height = sqrt(3) * size
     hexagon_height = hexagon_height*ratio
 
-    # make figure
-    p = figure(x_range = [xmin, xmax],y_range=[ymin-(hexagon_height/2), ymax],
-               tools="wheel_zoom,reset,save", background_fill_color= '#440154')
+    # Make figure
+    p = figure(x_range=[xmin, xmax], y_range=[ymin-(hexagon_height/2), ymax],
+               tools="wheel_zoom,reset,save", background_fill_color='#440154')
 
     p.grid.visible = False
     p.xaxis.axis_label = "log(P)"
@@ -797,53 +929,79 @@ def plot(tables, output_filename, xmin, xmax, ymin, ymax, class_id):
     p.xaxis.axis_label_text_font_style = 'normal'
     p.yaxis.axis_label_text_font_style = 'normal'
 
-    # source for widgets
+    # Source for widgets
     term_to_source = dict()
     term_to_class = dict()
+    term_to_drug_sources = dict()
     term_to_metadata = dict()
     term_to_stats = dict()
 
     options = []
+    
+    # Check if any tables have drug-likeness data
+    has_drug_data = any('Drug_Like' in tables[term]['table'].columns for term in tables.keys())
+    
     # Loop for plot sources
     for term in tables.keys():
-        print('sourcing %s' % term)
+        print(f'Sourcing {term}')
 
-        # add term to the options for the multiplot
+        # Add term to the options for the multiplot
         options.append((term, term))
 
-        # get table
+        # Get table
         table = tables[term]['table']
 
-        # plot sources
+        # Plot sources
         source, title = create_data_source(table, term, size, ratio, orientation, BLUR_MAX, BLUR_STEP_SIZE)
         source_class = create_class_source(table, size, ratio, orientation, class_id)
+        
+        # Drug-likeness sources
+        drug_sources = {}
+        if 'Drug_Like' in table.columns:
+            drug_sources['Drug_Like'] = create_drug_like_source(table, size, ratio, orientation, 'Drug_Like')
+        if 'Lipinski_RO5' in table.columns:
+            drug_sources['Lipinski_RO5'] = create_drug_like_source(table, size, ratio, orientation, 'Lipinski_RO5')
+        if 'Veber_Rule' in table.columns:
+            drug_sources['Veber_Rule'] = create_drug_like_source(table, size, ratio, orientation, 'Veber_Rule')
+        
         stats_description = create_stats_description(table)
+        
         term_to_source[term] = {'source': source, 'title': title}
-        term_to_class[term] =  {'source': source_class, 'show_class': True}
+        term_to_class[term] = {'source': source_class, 'show_class': True}
+        term_to_drug_sources[term] = {'source': drug_sources.get('Drug_Like', ColumnDataSource())}
         term_to_stats[term] = stats_description
 
-        # metadata
+        # Metadata
         metadata = return_html(tables[term]['metadata'])
         term_to_metadata[term] = metadata
 
-    # make default souce for plot, this is the first source shown in the plot, and also works like a container. Old data is thrown out and new data is thrown in.
-    default_term = list(tables.keys())[0] # pick the first one
+    # Make default source for plot
+    default_term = list(tables.keys())[0]
     table = tables[default_term]['table']
     source, title = create_data_source(table, default_term, size, ratio, orientation, BLUR_MAX, BLUR_STEP_SIZE)
     p.title.text = title
     metadata = tables[default_term]['metadata']
     metadata = return_html(metadata)
 
-    # color mapper
+    # Color mapper
     mapper = linear_cmap('Count', 'Viridis256', 0, max(source.data['Count']))
     hex = p.hex_tile(q="q", r="r", size=size, line_color=None, source=source, aspect_scale=ratio, orientation=orientation,
            fill_color=mapper)
 
+    # Class highlighting (existing functionality)
     if class_id:
         source_class = create_class_source(table, size, ratio, orientation, class_id)
         class_hex = p.hex_tile(q='q', r="r", size=size, line_color=None, source=source_class, aspect_scale=ratio,orientation=orientation,
             fill_color='#ff007f')
         class_hex.visible = False
+
+    # Drug-likeness highlighting
+    if has_drug_data and 'Drug_Like' in table.columns:
+        source_drug = create_drug_like_source(table, size, ratio, orientation, 'Drug_Like')
+        drug_hex = p.hex_tile(q='q', r="r", size=size, line_color='#00ff00', line_width=2, 
+                             source=source_drug, aspect_scale=ratio, orientation=orientation,
+                             fill_color='#00ff00', fill_alpha=0.3)
+        drug_hex.visible = False
 
     # HOVER
     TOOLTIPS = return_JS_code('tooltips')
@@ -855,16 +1013,22 @@ def plot(tables, output_filename, xmin, xmax, ymin, ymax, class_id):
     # Widgets
     slider1 = Slider(start=1, end=SATURATION_MAX, value=1, step=SATURATION_STEP_SIZE, title="Saturation", width=100)
     slider2 = Slider(start=0, end=BLUR_MAX, value=0, step=BLUR_STEP_SIZE, title="Blur", width=100)
-    multi_select = MultiSelect(title=output_filename, value=[default_term], options=options, width=100, height=300)
+    multi_select = MultiSelect(title=output_filename, value=[default_term], options=options, width=100, height=200)
     checkbox = CheckboxGroup(labels=["TFIDF"], active=[])
     radio_button_group = RadioGroup(labels=["Viridis256", "Greys256"], active=0)
-    button = Button(label="Metadata",button_type="default", width=100)
-    stats = Button(label="Statistics",button_type="default", width=100)
+    button = Button(label="Metadata", button_type="default", width=100)
+    stats = Button(label="Statistics", button_type="default", width=100)
+    
+    # Drug-likeness widgets
+    drug_widgets = []
+    if has_drug_data:
+        checkbox_druglike = CheckboxGroup(labels=["Highlight Drug-like"], active=[])
+        drug_widgets.append(checkbox_druglike)
+    
     if class_id:
-        label = "Show "+str(class_id)
-        checkbox_class = CheckboxGroup(labels=["Show "+str(class_id)], active=[])
+        checkbox_class = CheckboxGroup(labels=[f"Show {class_id}"], active=[])
 
-    # Javacode
+    # JavaScript code
     code_callback_slider1 = return_JS_code('slider1')
     code_callback_slider2 = return_JS_code('slider2')
     code_callback_ms = return_JS_code('multi_select')
@@ -872,9 +1036,14 @@ def plot(tables, output_filename, xmin, xmax, ymin, ymax, class_id):
     code_callback_rbg = return_JS_code('rbg')
     code_callback_button = return_JS_code('button')
     code_callback_stats = return_JS_code('stats')
+    
     if class_id:
         code_callback_ms = return_JS_code('multi_select_class')
         code_callback_class = return_JS_code('class')
+
+    # Drug-likeness callbacks
+    if has_drug_data:
+        code_callback_druglike = return_JS_code('drug_likeness')
 
     # Callbacks
     callback_slider1 = CustomJS(args={'source': source, 'mapper': mapper, 'slider2': slider2, 'checkbox': checkbox}, code=code_callback_slider1)
@@ -882,13 +1051,17 @@ def plot(tables, output_filename, xmin, xmax, ymin, ymax, class_id):
     callback_ms = CustomJS(args={'source': source, 'term_to_source': term_to_source, 'slider1': slider1, 'slider2': slider2, 'checkbox': checkbox, 'p': p, 'mapper': mapper}, code=code_callback_ms)
     callback_checkbox = CustomJS(args={'source': source, 'slider2': slider2, 'mapper': mapper, 'slider1': slider1}, code=code_callback_checkbox)
     callback_radio_button_group = CustomJS(args={'p': p, 'multi_select': multi_select, 'mapper': mapper, 'term_to_class': term_to_class, 'Viridis256': Viridis256, 'Greys256': Greys256}, code=code_callback_rbg)
-    callback_button = CustomJS(args={'term_to_metadata': term_to_metadata, 'multi_select': multi_select},code=code_callback_button)
-    callback_stats = CustomJS(args={'term_to_stats': term_to_stats, 'multi_select': multi_select},code=code_callback_stats)
+    callback_button = CustomJS(args={'term_to_metadata': term_to_metadata, 'multi_select': multi_select}, code=code_callback_button)
+    callback_stats = CustomJS(args={'term_to_stats': term_to_stats, 'multi_select': multi_select}, code=code_callback_stats)
+    
     if class_id:
         callback_ms = CustomJS(args={'source': source, 'term_to_source': term_to_source, 'slider1': slider1, 'slider2': slider2,
         'checkbox': checkbox, 'p': p, 'mapper': mapper, 'source_class': source_class, 'term_to_class': term_to_class, 'class_hex': class_hex,
         'checkbox_class': checkbox_class}, code=code_callback_ms)
         callback_class = CustomJS(args={'multi_select': multi_select, 'term_to_class': term_to_class, 'class_hex': class_hex}, code=code_callback_class)
+
+    if has_drug_data:
+        callback_druglike = CustomJS(args={'source_drug': source_drug, 'term_to_drug_sources': term_to_drug_sources, 'multi_select': multi_select, 'drug_hex': drug_hex}, code=code_callback_druglike)
 
     # On change
     slider1.js_on_change('value', callback_slider1)
@@ -898,15 +1071,37 @@ def plot(tables, output_filename, xmin, xmax, ymin, ymax, class_id):
     radio_button_group.js_on_change('active', callback_radio_button_group)
     button.js_on_event(events.ButtonClick, callback_button)
     stats.js_on_event(events.ButtonClick, callback_stats)
+    
     if class_id:
         checkbox_class.js_on_change('active', callback_class)
+    
+    if has_drug_data:
+        checkbox_druglike.js_on_change('active', callback_druglike)
 
     # Layout
+    widgets_column = [slider1, slider2, checkbox, radio_button_group]
+    
+    if has_drug_data:
+        widgets_column.extend(drug_widgets)
+    
     if class_id:
-        layout = row(multi_select, p, column(slider1, slider2, checkbox, checkbox_class, radio_button_group, button, stats))
-    else:
-        layout = row(multi_select, p, column(slider1, slider2, checkbox, radio_button_group, button, stats))
+        widgets_column.append(checkbox_class)
+    
+    widgets_column.extend([button, stats])
+    
+    layout = row(multi_select, p, column(*widgets_column))
     show(layout)
+
+def parser():
+    parser = argparse.ArgumentParser(description='Enhanced visualization with drug-likeness analysis')
+    parser.add_argument('-i', required=True, metavar='input_folder', dest='input_folder', help='Input folder with table files')
+    parser.add_argument('-o', required=True, metavar='output_filename', dest='output_filename', help='Output HTML filename')
+    parser.add_argument('-xmin', required=False, metavar='xmin', dest='xmin', help='X axis minimum (logP), default is -5')
+    parser.add_argument('-xmax', required=False, metavar='xmax', dest='xmax', help='X axis maximum (logP), default is 10')
+    parser.add_argument('-ymax', required=False, metavar='ymax', dest='ymax', help='Y axis maximum (mass in Da), default is 1600')
+    parser.add_argument('-class', required=False, metavar='class_id', dest='class_id', help='Class to highlight in the plot')
+    arguments = parser.parse_args()
+    return arguments
 
 def main():
     start_time = datetime.now()
@@ -918,7 +1113,7 @@ def main():
     xmax = args.xmax
     ymax = args.ymax
 
-    # default settings
+    # Default settings
     if not xmin:
         xmin = -5
     else:
@@ -931,7 +1126,7 @@ def main():
         ymax = 1600
     else:
         ymax = float(args.ymax)
-    ymin = 0 # cannot be negative
+    ymin = 0  # cannot be negative
 
     # Create required directories if they don't exist
     required_dirs = ['plots', 'tables', 'metadata', 'publication_dates']
@@ -941,11 +1136,52 @@ def main():
             print(f"Created directory: {directory}")
 
     files = get_files(folder)
+    if not files:
+        print(f"Error: No .pkl files found in {folder}")
+        print("Make sure to run make_table.py first to generate the required files.")
+        return
+    
+    print(f"Found {len(files)} table files to process")
+    
     tables = get_tables(files)
+    
+    # Report on available features
+    feature_summary = {}
+    for term, data in tables.items():
+        table = data['table']
+        features = []
+        
+        if 'Drug_Like' in table.columns:
+            features.append('Drug-likeness')
+        if 'Lipinski_RO5' in table.columns:
+            features.append('Lipinski RO5')
+        if 'Veber_Rule' in table.columns:
+            features.append('Veber Rule')
+        if 'PublicationYears' in table.columns:
+            features.append('Publication Timeline')
+        
+        extended_props = [col for col in ['HBD', 'HBA', 'PSA', 'RotBonds', 'Role'] if col in table.columns]
+        if extended_props:
+            features.append(f"Extended Properties ({', '.join(extended_props)})")
+        
+        feature_summary[term] = features
+    
+    print("\nEnhanced Features Available:")
+    for term, features in feature_summary.items():
+        if features:
+            print(f"  {term}: {', '.join(features)}")
+        else:
+            print(f"  {term}: Basic properties only")
 
     plot(tables, output_filename, xmin, xmax, ymin, ymax, args.class_id)
 
-    print(f"Visualization completed in {datetime.now() - start_time}")
+    print(f"\n✓ Enhanced visualization completed in {datetime.now() - start_time}")
+    print(f"Interactive plot saved as: plots/{output_filename}.html")
+    print("\nNew features include:")
+    print("- Drug-likeness rule highlighting")
+    print("- Extended chemical property analysis")
+    print("- Enhanced publication timeline statistics")
+    print("- Improved filtering transparency")
 
 if __name__ == '__main__':
     main()

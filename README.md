@@ -16,6 +16,10 @@ SCOPE-Extended combines natural language processing with chemical informatics to
 - **Specialized Filters**: Tailored for protein-ligand binding studies
 - **Stability Improvements**: Fixed bugs from the original repository
 - **User Experience**: Streamlined interface and improved documentation
+- **Drug-Likeness Analysis**: New features for analyzing drug-like properties
+- **Extended Chemical Properties**: Additional molecular property calculations
+- **Smart Protein Family Prediction**: AI-based protein family assignment
+- **Enhanced Chemical Type Classification**: Improved chemical type determination
 
 ## Features
 
@@ -27,6 +31,10 @@ SCOPE-Extended combines natural language processing with chemical informatics to
 - Comparative Analysis: Compare chemical distributions across different search queries
 - Interactive Controls: Adjust blur, saturation, and visualization modes
 - Publication Metrics: Statistics on research trends over time
+- Drug-Likeness Rules: Analyze compounds against Lipinski's Rule of Five and Veber's Rule
+- Extended Properties: Calculate H-bond donors/acceptors, TPSA, and rotatable bonds
+- Protein Family Prediction: Smart assignment of protein families based on techniques
+- Chemical Type Classification: Enhanced classification of compounds into ligands, buffers, and solvents
 
 ## Installation
 
@@ -100,6 +108,17 @@ Optional parameters:
 - `-class`: ChEBI class ID to highlight
 - `-years`: Filter by year range (e.g., "2010-2022")
 
+### 5. Generate Additional Figures
+```bash
+python generate_figures.py
+```
+
+This will create additional visualizations including:
+- Protein family distribution
+- Chemical type analysis
+- Molecular property correlations
+- Drug-likeness analysis
+
 ## Interactive Visualization Features
 
 The visualization interface includes:
@@ -113,6 +132,10 @@ The visualization interface includes:
 - Metadata Panel: View query metadata
 - Chemical Information: Hover tooltips showing top ChEBI compounds in each region
 - Export Options: Save visualizations as PNG or interactive HTML files
+- Drug-Likeness Highlighting: Visualize compounds that follow drug-likeness rules
+- Extended Property Analysis: View additional molecular properties
+- Protein Family Distribution: Analyze distribution across protein families
+- Chemical Type Analysis: Compare different chemical types
 
 ## Publication Date Analysis
 
@@ -145,6 +168,8 @@ The temporal analysis feature reveals:
   - tqdm
   - scikit-learn
   - matplotlib
+  - rdkit (for molecular property calculations)
+  - seaborn (for enhanced visualizations)
 
 ## Application in Research
 
@@ -154,6 +179,9 @@ SCOPE-Extended was successfully applied in the paper "A Text Mining Approach on 
 - Track the evolution of analytical techniques over time
 - Compare chemical distributions across different analytical methods
 - Discover trends in ligand properties based on analytical technique preference
+- Analyze drug-likeness patterns in protein-ligand binding studies
+- Study protein family preferences for different chemical types
+- Investigate temporal trends in chemical property distributions
 
 ## Troubleshooting
 
@@ -164,12 +192,15 @@ If you encounter issues:
 - Visualization Issues: Update bokeh to the latest version
 - Missing Data: Verify that the ChEBI property files were downloaded correctly
 - Timeout Errors: Increase the timeout settings in the script
+- RDKit Errors: Ensure RDKit is properly installed for molecular property calculations
+- Property Calculation Issues: Check SMILES string validity for problematic compounds
 
 ## Acknowledgments
 
 - Original SCOPE repository by [ReinV](https://github.com/ReinV/SCOPE)
 - Europe PMC for providing the API
-- ChEBI for the chemical ontology database 
+- ChEBI for the chemical ontology database
+- RDKit for molecular property calculations
 
 ## License
 
