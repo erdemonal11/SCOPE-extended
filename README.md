@@ -2,7 +2,7 @@
 
 A comprehensive text mining tool for analyzing chemical patterns in scientific literature with temporal analysis
 
-SCOPE-Extended is an enhanced version of the original SCOPE repository (Search and Chemical Ontology Plotting Environment), specifically optimized for protein-ligand binding studies. This tool was developed for and utilized in the research paper "A Text Mining Approach on Protein–Ligand Binding Studies Based on Analytical Techniques".
+SCOPE-Extended is an enhanced version of the original SCOPE repository (Search and Chemical Ontology Plotting Environment), specifically optimized for protein-ligand binding studies. This tool was developed for and utilized in the research paper "Text Mining-Based Profiling of Chemical Environments in Protein–Ligand Binding Assays Across Analytical Techniques".
 
 ## Overview
 
@@ -173,7 +173,7 @@ The temporal analysis feature reveals:
 
 ## Application in Research
 
-SCOPE-Extended was successfully applied in the paper "A Text Mining Approach on Protein–Ligand Binding Studies Based on Analytical Techniques" to:
+SCOPE-Extended was successfully applied in the paper "Text Mining-Based Profiling of Chemical Environments in Protein–Ligand Binding Assays Across Analytical Techniques" to:
 
 - Identify common chemicals used in protein-ligand binding studies
 - Track the evolution of analytical techniques over time
