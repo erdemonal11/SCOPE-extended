@@ -154,8 +154,6 @@ The temporal analysis feature reveals:
 - `tables/`: Processed data tables
 - `plots/`: Generated visualization HTML files
 - `publication_dates/`: Publication year information
-- `examples/`: Example query files and results
-- `docs/`: Additional documentation
 
 ## Requirements
 
